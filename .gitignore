@@ -1,0 +1,9 @@
+*.swo
+*.swn
+*.swp
+*.pyc
+*.pth
+*.csv
+*.png
+__pycache__
+.DS_Store
