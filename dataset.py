@@ -1,10 +1,15 @@
 import random
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 from os import listdir
 from os.path import join
 
 import torch.utils.data as data
+
+#20220705 YL
+from os.path import splitext
+import glob
+import os
 
 #Define a constant
 VOL_SIZE = 10  # number of images in a slice
@@ -29,8 +34,8 @@ def _sync_transform(img, clean, img1,img2):
     # random mirror
     if random.random() < 0.5:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
-        img1 = target.transpose(Image.FLIP_LEFT_RIGHT)
-        img2 = target2.transpose(Image.FLIP_LEFT_RIGHT)
+        img1 = img1.transpose(Image.FLIP_LEFT_RIGHT)
+        img2 = img2.transpose(Image.FLIP_LEFT_RIGHT)
         clean = clean.transpose(Image.FLIP_LEFT_RIGHT)
 
     # random scale (short edge)
@@ -66,6 +71,54 @@ def _sync_transform(img, clean, img1,img2):
 
     return img, img1, clean, img2
 
+# Simplified version to use syn dataset
+class DatasetFromFolderSyn(data.Dataset):
+    def __init__(self, image_dir, mode='train', synthesize=True, target_transform=None, input_transform=None):
+        super(DatasetFromFolderSyn, self).__init__()
+        self.image_dir=image_dir
+        self.image_filenames = []
+        self.target_filenames = []
+        self.image2_filenames = []
+        self.image3_filenames = []
+        self.mode = mode
+        self.synthesize=synthesize
+
+        files = sorted(glob.glob(os.path.join(image_dir, '*.png')))
+
+        self.image_filenames = files[0::3]
+        self.target_filenames = files[0::3]
+        self.image2_filenames = files[1::3]
+        self.image3_filenames = files[2::3]
+
+        self.input_transform = input_transform
+        self.target_transform = target_transform
+
+    def __getitem__(self, index):
+        # Input triplets
+        image1 = load_img(self.image_filenames[index])
+        image2 = load_img(self.image2_filenames[index])
+        image3 = load_img(self.image3_filenames[index])
+
+        # Corresponding ground truth
+        clean = load_img(self.target_filenames[index])
+        # in the case of synthesize noise we add a bit of data augmentation but only to the training dataset
+        if self.mode == 'train' and self.synthesize:
+            image1, image2, clean, image3 = _sync_transform(image1, clean, image2, image3)
+
+        # applying the input and target transformations
+        if self.input_transform:
+            image1 = self.input_transform(image1)
+            image2 = self.input_transform(image2)
+            image3 = self.input_transform(image3)
+
+        if self.target_transform:
+            clean = self.target_transform(clean)
+
+        return image1, image2, image3, clean
+
+    def __len__(self):
+        return len(self.image_filenames)
+
 # Acquire image triplets and their ground truth
 class DatasetFromFolder(data.Dataset):
     def __init__(self, image_dir, target_dir, mode='train', synthesize=False, target_transform=None, input_transform=None):
@@ -79,7 +132,10 @@ class DatasetFromFolder(data.Dataset):
         self.synthesize=synthesize
 
         # Get input filenames and its corresponding target name
-        for x in listdir(image_dir):
+        files = sorted(listdir(image_dir))
+
+        for i in range(len(files)):
+            x = files[i]
             if is_image_file(x):
                 self.image_filenames.append(join(image_dir, x))
 
@@ -90,7 +146,7 @@ class DatasetFromFolder(data.Dataset):
                 self.target_filenames.append(join(target_dir,target_name))
                 # Geting the image before and the image after the one we want to denoise
                 separator = '_'
-                img_name_spl = x.split(separator)
+                img_name_spl = splitext(x)[0].split(separator)
 
                 if synthesize:      # example EPFL data set
                     k = int(img_name_spl[-1])
@@ -99,19 +155,19 @@ class DatasetFromFolder(data.Dataset):
                     k = int(img_name_spl[-3])
                     l = VOL_SIZE    # running through the images in a volume
 
-                if k > 1 and k < l:
+                n = k + 1
+                n2 = k - 1
+
+                if i == 0:
                     n = k + 1
-                    n2 = k - 1
-                elif k == l:
-                    n = l - 1
-                    n2 = l - 2
-                elif k == 1:
-                    n = 2
-                    n2 = 3
+                    n2 = k + 2
+                elif i == l-1:
+                    n = k - 1
+                    n2 = k - 2
 
                 if synthesize:
-                    inp_name = img_name_spl[0] + separator+str(n) + x.split(".")[-1]
-                    inp_name2 = img_name_spl[0] + separator + str(n2) + x.split(".")[-1]
+                    inp_name = img_name_spl[0] + separator + str(n).zfill(4) + '.' + x.split(".")[-1]
+                    inp_name2 = img_name_spl[0] + separator + str(n2).zfill(4) + '.' + x.split(".")[-1]
                 else: # OHSU if we are denoising image Inputs_5_8_14_22.png
                     common_name = 'Inputs'+separator+img_name_spl[-4] #Inputs_5
 
