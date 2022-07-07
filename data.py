@@ -5,7 +5,7 @@ import numpy as np
 from torchvision.transforms import Compose, Normalize, ToTensor
 import torch
 
-from dataset import DatasetFromFolder
+from dataset import DatasetFromFolder, DatasetFromFolderSyn
 
 
 class Poiss_noise(object):
@@ -60,7 +60,7 @@ def get_training_set(f_dir,synthesize=False):
     train_dir_inputs = join(train_dir, "inputs")
     train_dir_labels = join(train_dir, "labels")
     if synthesize:
-        return DatasetFromFolder(train_dir_inputs,train_dir_labels,
+        return DatasetFromFolderSyn(train_dir_inputs,
                              mode='train',synthesize=synthesize,
                              target_transform=target_transform(),
                              input_transform=input_transform()
@@ -83,7 +83,7 @@ def get_test_set(f_dir,synthesize=False):
     test_dir_labels = join(test_dir, "labels")
 
     if synthesize:
-        return DatasetFromFolder(test_dir_inputs,test_dir_labels,
+        return DatasetFromFolderSyn(test_dir_inputs,
                              mode='val',synthesize=synthesize,
                              target_transform=target_transform(),
                              input_transform=input_transform()
